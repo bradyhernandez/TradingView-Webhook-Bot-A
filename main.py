@@ -44,8 +44,7 @@ def webhook():
             qty=50,  # You can customize this as needed
             side=side,
             type='market',
-            time_in_force='gtc',
-            extended_hours=True
+            time_in_force='gtc'
         )
         print(f"Order submitted: {side.upper()} {symbol}")
         return jsonify({'code': 'success', 'message': f'{side} order executed for {symbol}'}), 200
