@@ -1,46 +1,58 @@
-# ----------------------------------------------- #
-# Plugin Name           : TradingView-Webhook-Bot #
-# Author Name           : fabston                 #
-# File Name             : main.py                 #
-# ----------------------------------------------- #
-
-from handler import send_alert
-import config
-import time
 from flask import Flask, request, jsonify
+import os
+import alpaca_trade_api as tradeapi
 
 app = Flask(__name__)
 
+# Load ENV vars
+TOKEN = os.getenv("TOKEN")
+USE_PASSPHRASE = os.getenv("USE_PASSPHRASE", "True") == "True"
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
-def get_timestamp():
-    timestamp = time.strftime("%Y-%m-%d %X")
-    return timestamp
+APCA_API_KEY_ID = os.getenv("APCA_API_KEY_ID")
+APCA_API_SECRET_KEY = os.getenv("APCA_API_SECRET_KEY")
+APCA_API_BASE_URL = os.getenv("APCA_API_BASE_URL")
+
+alpaca = tradeapi.REST(APCA_API_KEY_ID, APCA_API_SECRET_KEY, APCA_API_BASE_URL, api_version='v2')
 
 
-@app.route("/webhook", methods=["POST"])
+@app.route('/')
+def home():
+    return 'TradingView Webhook Bot is online.'
+
+
+@app.route('/webhook', methods=['POST'])
 def webhook():
-    whitelisted_ips = ['52.89.214.238', '34.212.75.30', '54.218.53.128', '52.32.178.7']
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip not in whitelisted_ips:
-        return jsonify({'message': 'Unauthorized'}), 401
+    data = request.get_json()
+
+    if DEBUG:
+        print("Webhook received:", data)
+
+    if USE_PASSPHRASE:
+        if data.get("passphrase") != TOKEN:
+            return jsonify({'code': 'error', 'message': 'Invalid passphrase'}), 403
+
     try:
-        if request.method == "POST":
-            data = request.get_json()
-            if data["key"] == config.sec_key:
-                print(get_timestamp(), "Alert Received & Sent!")
-                send_alert(data)
-                return jsonify({'message': 'Webhook received successfully'}), 200
+        symbol = data['ticker']
+        side = data['strategy'].lower()  # "buy" or "sell"
+    except KeyError:
+        return jsonify({'code': 'error', 'message': 'Missing required fields'}), 400
 
-            else:
-                print("[X]", get_timestamp(), "Alert Received & Refused! (Wrong Key)")
-                return jsonify({'message': 'Unauthorized'}), 401
-
+    try:
+        order = alpaca.submit_order(
+            symbol=symbol,
+            qty=1,  # You can customize this as needed
+            side=side,
+            type='market',
+            time_in_force='gtc'
+        )
+        print(f"Order submitted: {side.upper()} {symbol}")
+        return jsonify({'code': 'success', 'message': f'{side} order executed for {symbol}'}), 200
     except Exception as e:
-        print("[X]", get_timestamp(), "Error:\n>", e)
-        return jsonify({'message': 'Error'}), 400
+        print("Order error:", e)
+        return jsonify({'code': 'error', 'message': str(e)}), 500
 
 
-if __name__ == "__main__":
-    from waitress import serve
-
-    serve(app, host="0.0.0.0", port=8080)
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
