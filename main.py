@@ -41,7 +41,7 @@ def webhook():
     try:
         order = alpaca.submit_order(
             symbol=symbol,
-            qty=50,  # You can customize this as needed
+            qty=1,  # You can customize this as needed
             side=side,
             type='market',
             time_in_force='gtc'
